@@ -1,0 +1,742 @@
+-- Cargar Orion Library
+local OrionLib = loadstring(game:HttpGet('https://raw.githubusercontent.com/jensonhirst/Orion/main/source'))()
+
+local Window = OrionLib:MakeWindow({
+    Name = "Universal Hub v4",
+    HidePremium = false,
+    SaveConfig = true,
+    ConfigFolder = "UniversalHubV4",
+    IntroEnabled = true,
+    IntroText = "Universal Hub v4",
+})
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local lp = Players.LocalPlayer
+local cam = game.Workspace.CurrentCamera
+local efectos = {}
+local conexiones = {}
+
+-- Valores actuales de shaders (para que los sliders funcionen siempre)
+local shaderVals = {
+    bloom = 1,
+    saturacion = 0,
+    contraste = 0,
+    brillo = 0,
+    rayossol = 0,
+    blur = 0,
+}
+
+local function limpiarConexion(tag)
+    if conexiones[tag] then conexiones[tag]:Disconnect(); conexiones[tag] = nil end
+end
+
+local function nuevoEfecto(clase)
+    local e = Instance.new(clase, Lighting)
+    table.insert(efectos, e)
+    return e
+end
+
+local function limpiarShaders()
+    for _, e in ipairs(efectos) do if e and e.Parent then e:Destroy() end end
+    efectos = {}
+end
+
+-- Aplica los valores actuales de sliders a los efectos existentes
+local function aplicarSliders()
+    for _, e in ipairs(efectos) do
+        if e:IsA("BloomEffect") then
+            e.Intensity = shaderVals.bloom
+        elseif e:IsA("ColorCorrectionEffect") then
+            e.Saturation = shaderVals.saturacion
+            e.Contrast = shaderVals.contraste
+            e.Brightness = shaderVals.brillo
+        elseif e:IsA("SunRaysEffect") then
+            e.Intensity = shaderVals.rayossol
+        elseif e:IsA("BlurEffect") then
+            e.Size = shaderVals.blur
+        end
+    end
+end
+
+-- ══════════════════════════
+--       TAB: JUGADOR
+-- ══════════════════════════
+local PlayerTab = Window:MakeTab({ Name = "👤 Jugador", Icon = "rbxassetid://4483362458", PremiumOnly = false })
+
+PlayerTab:AddSlider({
+    Name = "Velocidad", Min = 16, Max = 300, Default = 16,
+    Color = Color3.fromRGB(255,100,100), Increment = 1, ValueName = "studs/s",
+    Callback = function(val)
+        local char = lp.Character
+        if char and char:FindFirstChild("Humanoid") then char.Humanoid.WalkSpeed = val end
+    end,
+})
+
+PlayerTab:AddSlider({
+    Name = "Poder de salto", Min = 50, Max = 500, Default = 50,
+    Color = Color3.fromRGB(100,200,255), Increment = 5, ValueName = "power",
+    Callback = function(val)
+        local char = lp.Character
+        if char and char:FindFirstChild("Humanoid") then char.Humanoid.JumpPower = val end
+    end,
+})
+
+PlayerTab:AddToggle({
+    Name = "Infinite Jump", Default = false,
+    Callback = function(val)
+        limpiarConexion("infjump")
+        if val then
+            conexiones["infjump"] = UIS.JumpRequest:Connect(function()
+                local char = lp.Character
+                if char and char:FindFirstChild("Humanoid") then
+                    char.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end)
+        end
+    end,
+})
+
+PlayerTab:AddToggle({
+    Name = "Noclip", Default = false,
+    Callback = function(val)
+        limpiarConexion("noclip")
+        if val then
+            conexiones["noclip"] = RunService.Stepped:Connect(function()
+                local char = lp.Character
+                if char then
+                    for _, p in ipairs(char:GetDescendants()) do
+                        if p:IsA("BasePart") then p.CanCollide = false end
+                    end
+                end
+            end)
+        end
+    end,
+})
+
+PlayerTab:AddToggle({
+    Name = "Fly (WASD + Space/Shift)", Default = false,
+    Callback = function(val)
+        limpiarConexion("fly")
+        local char = lp.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        if val then
+            local bg = Instance.new("BodyGyro", hrp)
+            bg.Name = "FlyGyro"; bg.MaxTorque = Vector3.new(1e9,1e9,1e9); bg.D = 100
+            local bv = Instance.new("BodyVelocity", hrp)
+            bv.Name = "FlyVelocity"; bv.MaxForce = Vector3.new(1e9,1e9,1e9); bv.Velocity = Vector3.zero
+            conexiones["fly"] = RunService.Heartbeat:Connect(function()
+                local speed = 60
+                local dir = Vector3.zero
+                if UIS:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
+                if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.new(0,1,0) end
+                bv.Velocity = dir * speed
+                bg.CFrame = cam.CFrame
+            end)
+        else
+            if hrp:FindFirstChild("FlyGyro") then hrp.FlyGyro:Destroy() end
+            if hrp:FindFirstChild("FlyVelocity") then hrp.FlyVelocity:Destroy() end
+        end
+    end,
+})
+
+PlayerTab:AddToggle({
+    Name = "Anti AFK", Default = true,
+    Callback = function(val)
+        if val then
+            local vu = game:GetService("VirtualUser")
+            lp.Idled:Connect(function()
+                vu:Button2Down(Vector2.new(0,0), CFrame.new())
+                task.wait(1)
+                vu:Button2Up(Vector2.new(0,0), CFrame.new())
+            end)
+        end
+    end,
+})
+
+PlayerTab:AddToggle({
+    Name = "God Mode (local)", Default = false,
+    Callback = function(val)
+        limpiarConexion("god")
+        if val then
+            conexiones["god"] = RunService.Heartbeat:Connect(function()
+                local char = lp.Character
+                if char and char:FindFirstChild("Humanoid") then
+                    char.Humanoid.Health = char.Humanoid.MaxHealth
+                end
+            end)
+        end
+    end,
+})
+
+PlayerTab:AddToggle({
+    Name = "Invisible (local)", Default = false,
+    Callback = function(val)
+        local char = lp.Character
+        if not char then return end
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+                p.Transparency = val and 1 or 0
+            end
+        end
+    end,
+})
+
+PlayerTab:AddButton({
+    Name = "Ir al Spawn",
+    Callback = function()
+        local char = lp.Character
+        local spawn = game.Workspace:FindFirstChildOfClass("SpawnLocation")
+        if char and spawn then
+            char.HumanoidRootPart.CFrame = spawn.CFrame + Vector3.new(0,5,0)
+        end
+    end,
+})
+
+PlayerTab:AddButton({
+    Name = "Resetear personaje",
+    Callback = function()
+        local h = lp.Character and lp.Character:FindFirstChild("Humanoid")
+        if h then h.Health = 0 end
+    end,
+})
+
+-- ══════════════════════════
+--       TAB: JUGADORES
+-- ══════════════════════════
+local PlayersTab = Window:MakeTab({ Name = "🎮 Jugadores", Icon = "rbxassetid://4483362458", PremiumOnly = false })
+
+local targetPlayer = nil
+
+local function getPlayerNames()
+    local names = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= lp then table.insert(names, p.Name) end
+    end
+    return names
+end
+
+PlayersTab:AddDropdown({
+    Name = "Seleccionar jugador",
+    Default = "",
+    Options = getPlayerNames(),
+    Callback = function(val)
+        targetPlayer = Players:FindFirstChild(val)
+    end,
+})
+
+PlayersTab:AddButton({
+    Name = "Ver info del jugador",
+    Callback = function()
+        if not targetPlayer then
+            OrionLib:MakeNotification({ Name = "Error", Content = "Selecciona un jugador primero", Time = 3 })
+            return
+        end
+        local char = targetPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChild("Humanoid")
+        local ping = math.floor(targetPlayer:GetNetworkPing() * 1000)
+        local dist = hrp and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+            and math.floor((hrp.Position - lp.Character.HumanoidRootPart.Position).Magnitude).."m" or "N/A"
+        local hp = hum and math.floor(hum.Health) or "N/A"
+        local maxHp = hum and math.floor(hum.MaxHealth) or "N/A"
+        OrionLib:MakeNotification({
+            Name = "👤 " .. targetPlayer.Name,
+            Content = "❤ HP: "..hp.."/"..maxHp.."\n📏 Dist: "..dist.."\n📡 Ping: "..ping.."ms\n🆔 ID: "..targetPlayer.UserId,
+            Time = 6,
+        })
+    end,
+})
+
+PlayersTab:AddButton({
+    Name = "Teleportarme al jugador",
+    Callback = function()
+        if not targetPlayer then
+            OrionLib:MakeNotification({ Name = "Error", Content = "Selecciona un jugador primero", Time = 3 })
+            return
+        end
+        local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+        local targetHrp = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and targetHrp then
+            hrp.CFrame = targetHrp.CFrame + Vector3.new(3,0,0)
+            OrionLib:MakeNotification({ Name = "✅ Teleportado", Content = "Fuiste a "..targetPlayer.Name, Time = 2 })
+        end
+    end,
+})
+
+PlayersTab:AddToggle({
+    Name = "Seguir jugador", Default = false,
+    Callback = function(val)
+        limpiarConexion("seguir")
+        if val and targetPlayer then
+            conexiones["seguir"] = RunService.Heartbeat:Connect(function()
+                local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+                local targetHrp = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp and targetHrp then
+                    local dist = (hrp.Position - targetHrp.Position).Magnitude
+                    if dist > 5 then hrp.CFrame = targetHrp.CFrame + Vector3.new(3,0,0) end
+                end
+            end)
+        end
+    end,
+})
+
+PlayersTab:AddToggle({
+    Name = "Cámara apuntando al jugador", Default = false,
+    Callback = function(val)
+        limpiarConexion("camara")
+        if val and targetPlayer then
+            conexiones["camara"] = RunService.RenderStepped:Connect(function()
+                local targetChar = targetPlayer.Character
+                if targetChar and targetChar:FindFirstChild("HumanoidRootPart") then
+                    cam.CFrame = CFrame.lookAt(cam.CFrame.Position, targetChar.HumanoidRootPart.Position)
+                end
+            end)
+        end
+    end,
+})
+
+PlayersTab:AddToggle({
+    Name = "ESP todos los jugadores", Default = false,
+    Callback = function(val)
+        local function addESP(player)
+            if player == lp then return end
+            local function applyHL(char)
+                task.wait(0.5)
+                local old = char:FindFirstChild("ESP_HL")
+                if old then old:Destroy() end
+                if val then
+                    local h = Instance.new("Highlight")
+                    h.Name = "ESP_HL"
+                    h.FillColor = Color3.fromRGB(255,50,50)
+                    h.OutlineColor = Color3.fromRGB(255,255,255)
+                    h.Parent = char
+                end
+            end
+            player.CharacterAdded:Connect(applyHL)
+            if player.Character then applyHL(player.Character) end
+        end
+        for _, p in ipairs(Players:GetPlayers()) do addESP(p) end
+        Players.PlayerAdded:Connect(addESP)
+    end,
+})
+
+PlayersTab:AddToggle({
+    Name = "X-Ray (ver a través de paredes)", Default = false,
+    Callback = function(val)
+        limpiarConexion("xray")
+
+        local function aplicarXray(player)
+            if player == lp then return end
+            local function ponerHL(char)
+                task.wait(0.3)
+                if not char then return end
+                local old = char:FindFirstChild("XRAY_HL")
+                if old then old:Destroy() end
+                if val then
+                    local hl = Instance.new("Highlight")
+                    hl.Name = "XRAY_HL"
+                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    hl.FillColor = Color3.fromRGB(0,200,255)
+                    hl.OutlineColor = Color3.fromRGB(255,255,255)
+                    hl.FillTransparency = 0.4
+                    hl.Parent = char
+                end
+            end
+            -- Aplicar al personaje actual
+            if player.Character then ponerHL(player.Character) end
+            -- Aplicar cuando reaparezca
+            player.CharacterAdded:Connect(function(char)
+                if val then ponerHL(char) end
+            end)
+        end
+
+        if val then
+            -- Aplicar a todos los jugadores actuales
+            for _, p in ipairs(Players:GetPlayers()) do
+                aplicarXray(p)
+            end
+            -- Aplicar a jugadores que entren después
+            conexiones["xray"] = Players.PlayerAdded:Connect(function(p)
+                aplicarXray(p)
+            end)
+        else
+            -- Quitar todos los highlights
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Character then
+                    local h = p.Character:FindFirstChild("XRAY_HL")
+                    if h then h:Destroy() end
+                end
+            end
+        end
+    end,
+})
+
+PlayersTab:AddButton({
+    Name = "Listar jugadores + ping",
+    Callback = function()
+        local lista = ""
+        for _, p in ipairs(Players:GetPlayers()) do
+            lista = lista .. p.Name .. " — " .. math.floor(p:GetNetworkPing()*1000) .. "ms\n"
+        end
+        OrionLib:MakeNotification({ Name = "👥 Jugadores", Content = lista, Time = 7 })
+    end,
+})
+
+-- ══════════════════════════
+--       TAB: VISUAL
+-- ══════════════════════════
+local VisualTab = Window:MakeTab({ Name = "👁 Visual", Icon = "rbxassetid://4483362458", PremiumOnly = false })
+
+VisualTab:AddToggle({
+    Name = "Fullbright", Default = false,
+    Callback = function(val)
+        Lighting.Brightness = val and 10 or 1
+        Lighting.ClockTime = val and 14 or 12
+    end,
+})
+
+VisualTab:AddSlider({
+    Name = "FOV", Min = 50, Max = 130, Default = 70,
+    Color = Color3.fromRGB(100,255,200), Increment = 1, ValueName = "°",
+    Callback = function(val) cam.FieldOfView = val end,
+})
+
+VisualTab:AddToggle({
+    Name = "Tercera persona forzada", Default = false,
+    Callback = function(val)
+        limpiarConexion("tercerapersona")
+        if val then
+            conexiones["tercerapersona"] = RunService.RenderStepped:Connect(function()
+                cam.CameraType = Enum.CameraType.Attach
+            end)
+        else
+            cam.CameraType = Enum.CameraType.Custom
+        end
+    end,
+})
+
+VisualTab:AddToggle({
+    Name = "Mostrar hitbox jugadores", Default = false,
+    Callback = function(val)
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= lp and p.Character then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    if val then
+                        local box = Instance.new("SelectionBox")
+                        box.Name = "HitboxESP"
+                        box.Adornee = hrp
+                        box.Color3 = Color3.fromRGB(255,255,0)
+                        box.LineThickness = 0.05
+                        box.Parent = hrp
+                    else
+                        local b = hrp:FindFirstChild("HitboxESP")
+                        if b then b:Destroy() end
+                    end
+                end
+            end
+        end
+    end,
+})
+
+-- ══════════════════════════
+--       TAB: MUNDO
+-- ══════════════════════════
+local WorldTab = Window:MakeTab({ Name = "🌍 Mundo", Icon = "rbxassetid://4483362458", PremiumOnly = false })
+
+WorldTab:AddSlider({
+    Name = "Hora del día", Min = 0, Max = 24, Default = 14,
+    Color = Color3.fromRGB(255,220,100), Increment = 1, ValueName = "h",
+    Callback = function(val) Lighting.ClockTime = val end,
+})
+
+WorldTab:AddToggle({
+    Name = "Sin niebla", Default = false,
+    Callback = function(val)
+        Lighting.FogEnd = val and 999999 or 1000
+        Lighting.FogStart = val and 999999 or 0
+    end,
+})
+
+WorldTab:AddToggle({
+    Name = "Sin sombras", Default = false,
+    Callback = function(val) Lighting.GlobalShadows = not val end,
+})
+
+WorldTab:AddToggle({
+    Name = "Modo lluvia", Default = false,
+    Callback = function(val)
+        local atmos = Lighting:FindFirstChildOfClass("Atmosphere")
+        if val then
+            if not atmos then atmos = Instance.new("Atmosphere", Lighting) end
+            atmos.Density = 0.6; atmos.Haze = 2
+            atmos.Color = Color3.fromRGB(150,160,180)
+        else
+            if atmos then atmos:Destroy() end
+        end
+    end,
+})
+
+WorldTab:AddToggle({
+    Name = "Ambiente nocturno", Default = false,
+    Callback = function(val)
+        if val then
+            Lighting.ClockTime = 0; Lighting.Brightness = 0.1
+            Lighting.Ambient = Color3.fromRGB(20,20,50)
+            Lighting.OutdoorAmbient = Color3.fromRGB(10,10,30)
+        else
+            Lighting.ClockTime = 14; Lighting.Brightness = 1
+            Lighting.Ambient = Color3.fromRGB(127,127,127)
+            Lighting.OutdoorAmbient = Color3.fromRGB(127,127,127)
+        end
+    end,
+})
+
+WorldTab:AddToggle({
+    Name = "Gravedad baja", Default = false,
+    Callback = function(val)
+        game.Workspace.Gravity = val and 40 or 196.2
+    end,
+})
+
+-- CORREGIDO: slider de gravedad con enteros y callback directo
+WorldTab:AddSlider({
+    Name = "Gravedad personalizada", Min = 10, Max = 400, Default = 196,
+    Color = Color3.fromRGB(200,150,255), Increment = 1, ValueName = "g",
+    Callback = function(val)
+        game.Workspace.Gravity = val
+    end,
+})
+
+-- ══════════════════════════
+--       TAB: SHADERS
+-- ══════════════════════════
+local ShaderTab = Window:MakeTab({ Name = "✨ Shaders", Icon = "rbxassetid://4483362458", PremiumOnly = false })
+
+local presets = {
+    ["🎬 Cinematico"] = function()
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=0.6; b.Size=24; b.Threshold=0.95
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=0.15; c.Contrast=0.2; c.Brightness=-0.05
+        local d = nuevoEfecto("DepthOfFieldEffect"); d.FocusDistance=50; d.InFocusRadius=25; d.NearIntensity=0.2; d.FarIntensity=0.5
+        local s = nuevoEfecto("SunRaysEffect"); s.Intensity=0.1; s.Spread=0.5
+    end,
+    ["🌈 Neon"] = function()
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=3; b.Size=56; b.Threshold=0.7
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=1; c.Contrast=0.3; c.TintColor=Color3.fromRGB(200,180,255)
+        Lighting.Ambient=Color3.fromRGB(80,0,120); Lighting.ClockTime=0
+    end,
+    ["📷 Retro"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=-0.5; c.Contrast=0.4; c.Brightness=-0.1; c.TintColor=Color3.fromRGB(255,215,170)
+        local bl = nuevoEfecto("BlurEffect"); bl.Size=5
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=0.3; b.Size=10; b.Threshold=0.98
+    end,
+    ["☢️ Apocalipsis"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=-0.7; c.Contrast=0.5; c.TintColor=Color3.fromRGB(255,160,120)
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=0.4; b.Size=16; b.Threshold=0.9
+        Lighting.Ambient=Color3.fromRGB(100,40,10); Lighting.ClockTime=17
+    end,
+    ["❄️ Invierno"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=-0.2; c.Contrast=0.15; c.Brightness=0.1; c.TintColor=Color3.fromRGB(200,220,255)
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=0.9; b.Size=30; b.Threshold=0.9
+        Lighting.Ambient=Color3.fromRGB(180,200,255); Lighting.ClockTime=10
+    end,
+    ["🌊 Oceano"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=0.4; c.Contrast=0.1; c.TintColor=Color3.fromRGB(100,180,255)
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=0.7; b.Size=20; b.Threshold=0.92
+        local s = nuevoEfecto("SunRaysEffect"); s.Intensity=0.2; s.Spread=0.8
+        Lighting.ClockTime=13
+    end,
+    ["🌇 Atardecer"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=0.5; c.Contrast=0.2; c.TintColor=Color3.fromRGB(255,180,100)
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=1.2; b.Size=40; b.Threshold=0.85
+        local s = nuevoEfecto("SunRaysEffect"); s.Intensity=0.3; s.Spread=1
+        Lighting.ClockTime=18
+    end,
+    ["💜 Cyberpunk"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=0.8; c.Contrast=0.4; c.TintColor=Color3.fromRGB(180,100,255)
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=2.5; b.Size=48; b.Threshold=0.75
+        Lighting.Ambient=Color3.fromRGB(50,0,100); Lighting.ClockTime=0; Lighting.Brightness=0.3
+    end,
+    ["🌿 Natural"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=0.3; c.Contrast=0.1; c.Brightness=0.05; c.TintColor=Color3.fromRGB(200,255,200)
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=0.5; b.Size=18; b.Threshold=0.95
+        local s = nuevoEfecto("SunRaysEffect"); s.Intensity=0.15; s.Spread=0.6
+        Lighting.ClockTime=12
+    end,
+    ["🔥 Infernal"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=0.6; c.Contrast=0.5; c.TintColor=Color3.fromRGB(255,100,50)
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=2; b.Size=36; b.Threshold=0.8
+        Lighting.Ambient=Color3.fromRGB(120,30,0); Lighting.ClockTime=20; Lighting.Brightness=0.5
+    end,
+    ["🌸 Sakura"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=0.4; c.Contrast=0.05; c.Brightness=0.1; c.TintColor=Color3.fromRGB(255,210,220)
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=1; b.Size=28; b.Threshold=0.88
+        local s = nuevoEfecto("SunRaysEffect"); s.Intensity=0.12; s.Spread=0.4
+        Lighting.ClockTime=11; Lighting.Ambient=Color3.fromRGB(255,200,210)
+    end,
+    ["🌌 Galaxia"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=0.9; c.Contrast=0.5; c.TintColor=Color3.fromRGB(100,80,255)
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=3; b.Size=60; b.Threshold=0.65
+        Lighting.Ambient=Color3.fromRGB(20,0,60); Lighting.ClockTime=0; Lighting.Brightness=0.1
+    end,
+    ["🟡 Dorado"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=0.5; c.Contrast=0.3; c.TintColor=Color3.fromRGB(255,220,100)
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=1.5; b.Size=32; b.Threshold=0.82
+        local s = nuevoEfecto("SunRaysEffect"); s.Intensity=0.25; s.Spread=0.7
+        Lighting.ClockTime=16
+    end,
+    ["🖤 Noir"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=-1; c.Contrast=0.6; c.Brightness=-0.1
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=0.2; b.Size=8; b.Threshold=0.99
+        Lighting.Brightness=0.8
+    end,
+    ["🌀 Psicodélico"] = function()
+        local c = nuevoEfecto("ColorCorrectionEffect"); c.Saturation=1; c.Contrast=0.6; c.TintColor=Color3.fromRGB(255,100,255)
+        local b = nuevoEfecto("BloomEffect"); b.Intensity=4; b.Size=64; b.Threshold=0.6
+        Lighting.Ambient=Color3.fromRGB(100,0,100); Lighting.ClockTime=0
+    end,
+}
+
+local presetNames = {}
+for k in pairs(presets) do table.insert(presetNames, k) end
+table.sort(presetNames)
+
+local shaderActivo = false
+local presetSeleccionado = presetNames[1]
+
+ShaderTab:AddToggle({
+    Name = "Activar Shaders", Default = false,
+    Callback = function(val)
+        shaderActivo = val
+        if val then
+            limpiarShaders()
+            presets[presetSeleccionado]()
+            aplicarSliders() -- aplica los sliders actuales al preset recién cargado
+        else
+            limpiarShaders()
+        end
+    end,
+})
+
+ShaderTab:AddDropdown({
+    Name = "Preset de Shader",
+    Default = presetNames[1],
+    Options = presetNames,
+    Callback = function(val)
+        presetSeleccionado = val
+        if shaderActivo then
+            limpiarShaders()
+            presets[val]()
+            aplicarSliders() -- aplica los sliders actuales al nuevo preset
+        end
+    end,
+})
+
+-- CORREGIDO: sliders guardan valor y llaman aplicarSliders()
+ShaderTab:AddSlider({
+    Name = "Bloom", Min = 0, Max = 500, Default = 100,
+    Color = Color3.fromRGB(255,220,100), Increment = 1, ValueName = "%",
+    Callback = function(val)
+        shaderVals.bloom = val / 100
+        for _, e in ipairs(efectos) do
+            if e:IsA("BloomEffect") then e.Intensity = shaderVals.bloom end
+        end
+    end,
+})
+
+ShaderTab:AddSlider({
+    Name = "Saturacion", Min = -100, Max = 100, Default = 0,
+    Color = Color3.fromRGB(100,200,255), Increment = 1, ValueName = "%",
+    Callback = function(val)
+        shaderVals.saturacion = val / 100
+        for _, e in ipairs(efectos) do
+            if e:IsA("ColorCorrectionEffect") then e.Saturation = shaderVals.saturacion end
+        end
+    end,
+})
+
+ShaderTab:AddSlider({
+    Name = "Contraste", Min = -100, Max = 100, Default = 0,
+    Color = Color3.fromRGB(200,100,255), Increment = 1, ValueName = "%",
+    Callback = function(val)
+        shaderVals.contraste = val / 100
+        for _, e in ipairs(efectos) do
+            if e:IsA("ColorCorrectionEffect") then e.Contrast = shaderVals.contraste end
+        end
+    end,
+})
+
+ShaderTab:AddSlider({
+    Name = "Brillo", Min = -100, Max = 100, Default = 0,
+    Color = Color3.fromRGB(255,255,100), Increment = 1, ValueName = "%",
+    Callback = function(val)
+        shaderVals.brillo = val / 100
+        for _, e in ipairs(efectos) do
+            if e:IsA("ColorCorrectionEffect") then e.Brightness = shaderVals.brillo end
+        end
+    end,
+})
+
+ShaderTab:AddSlider({
+    Name = "Rayos de sol", Min = 0, Max = 100, Default = 0,
+    Color = Color3.fromRGB(255,200,50), Increment = 1, ValueName = "%",
+    Callback = function(val)
+        shaderVals.rayossol = val / 100
+        local found = false
+        for _, e in ipairs(efectos) do
+            if e:IsA("SunRaysEffect") then
+                e.Intensity = shaderVals.rayossol
+                found = true
+            end
+        end
+        if not found and shaderActivo and val > 0 then
+            local s = nuevoEfecto("SunRaysEffect")
+            s.Intensity = shaderVals.rayossol
+            s.Spread = 0.5
+        end
+    end,
+})
+
+ShaderTab:AddSlider({
+    Name = "Blur", Min = 0, Max = 20, Default = 0,
+    Color = Color3.fromRGB(150,150,255), Increment = 1, ValueName = "px",
+    Callback = function(val)
+        shaderVals.blur = val
+        local found = false
+        for _, e in ipairs(efectos) do
+            if e:IsA("BlurEffect") then
+                e.Size = val
+                found = true
+            end
+        end
+        if not found and shaderActivo and val > 0 then
+            local bl = nuevoEfecto("BlurEffect")
+            bl.Size = val
+        end
+    end,
+})
+
+-- ══════════════════════════
+--       TAB: INFO
+-- ══════════════════════════
+local InfoTab = Window:MakeTab({ Name = "ℹ️ Info", Icon = "rbxassetid://4483362458", PremiumOnly = false })
+
+local ok, info = pcall(function()
+    return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name
+end)
+InfoTab:AddParagraph("Juego", ok and info or tostring(game.PlaceId))
+InfoTab:AddParagraph("Usuario", lp.Name .. " | ID: " .. lp.UserId)
+InfoTab:AddParagraph("Ping", math.floor(lp:GetNetworkPing()*1000).."ms")
+InfoTab:AddParagraph("Versión", "Universal Hub v4 Fixed — Orion Library")
+
+OrionLib:Init()
